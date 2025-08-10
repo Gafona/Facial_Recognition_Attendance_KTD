@@ -1,12 +1,4 @@
 # siamese_ml_train.py
-"""
-Train a "Siamese-like" ML model (no deep learning).
-- Uses extract_feature_from_image_bgr from your prepare_data_test.py
-- Pipeline: VarianceThreshold -> StandardScaler -> PCA (fit on ALL single-image features)
-- Build pair dataset from embeddings, train MLPClassifier on pair features
-- Save model dict to 'siamese_ml_model.pkl'
-"""
-
 import os
 import random
 import joblib
@@ -24,13 +16,6 @@ np.random.seed(RANDOM_SEED)
 
 
 def build_single_features(dataset_path):
-    """Return:
-       - features_raw: list of per-image raw feature vectors (numpy arrays)
-       - labels: corresponding person index list
-       - img_paths: list of image paths in same order
-       - persons: list of person names (index->name)
-       - person_to_idxs: dict person->list of indices in features_raw
-    """
     data_map = build_data_map(dataset_path)
     persons = list(data_map.keys())
     features_raw = []
@@ -64,9 +49,6 @@ def extract_img_cv2(path):
 
 
 def make_pair_feature(e1, e2):
-    """Given two embeddings (1D numpy), produce pair feature vector:
-       [e1, e2, |e1-e2|] concatenated
-    """
     e1 = np.asarray(e1).ravel()
     e2 = np.asarray(e2).ravel()
     diff = np.abs(e1 - e2)
@@ -74,14 +56,6 @@ def make_pair_feature(e1, e2):
 
 
 def build_pairs_from_embeddings(embeddings, labels, person_to_idxs, neg_per_pos=1):
-    """
-    embeddings: (N, D)
-    labels: list length N
-    person_to_idxs: mapping person_name -> list of indices
-    Return X_pairs, y_pairs
-    - positive pairs: all combinations within each person (or up to some max)
-    - negative pairs: random pairs between different persons (sampled)
-    """
     N = len(labels)
     X_pairs = []
     y_pairs = []
@@ -221,3 +195,4 @@ if __name__ == "__main__":
     DATASET_PATH = r"D:\AI\project\dataset_update"  # change to your dataset
     train_siamese_ml(DATASET_PATH, out_model_path="siamese_ml_model.pkl",
                      pca_dim=128, neg_per_pos=1, test_size=0.15)
+
