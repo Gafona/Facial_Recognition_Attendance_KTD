@@ -25,7 +25,9 @@ Hệ thống sử dụng một file duy nhất siamese_ml_model.pkl chứa:
 + Bộ phân loại cặp khuôn mặt (pair_clf)
 + Embedding gallery và tên người (gallery_embeddings, gallery_names)
 
-Nhưng bạn cần chạy lại code prepare_data.py để có được model vì khuôn mặt người không phải ai cũng giống nhau đúng không nè!, nên là hãy tại ra 1 data của riêng mình và chạy chúng nha
+## 🔥 Lưu ý:
+
+Nhưng bạn cần chạy lại code prepare_data.py và siamese_ml_train.py để chuẩn bị data và huấn luyện mô hình vì model khuôn mặt người nhưng ngoại hình không phải ai cũng giống nhau đúng không nè!, nên là hãy tại ra 1 data của riêng mình và chạy chúng nha
 
 2️⃣ Chạy hệ thống điểm danh
 Kết nối camera.
