@@ -5,9 +5,13 @@ Dự án này là hệ thống điểm danh tự động bằng nhận diện kh
 ## 🚀 Tính năng chính
 
 ✅ Phát hiện khuôn mặt trong thời gian thực bằng Haar Cascade.
+
 ✅ Trích xuất đặc trưng khuôn mặt và giảm chiều bằng PCA.
+
 ✅ Phân loại khuôn mặt bằng MLP Classifier, dự đoán xác suất nhận dạng.
+
 ✅ Điểm danh tự động nếu xác suất nhận dạng vượt ngưỡng.
+
 ✅ Hỗ trợ lưu lại ảnh và log kết quả điểm danh.
 
 ## 🔍 Hướng dẫn sử dụng
@@ -16,9 +20,13 @@ Dự án này là hệ thống điểm danh tự động bằng nhận diện kh
 Hệ thống sử dụng một file duy nhất siamese_ml_model.pkl chứa:
 
 + Bộ chọn đặc trưng (selector)
++ 
 + Bộ chuẩn hoá (scaler)
++ 
 + PCA giảm chiều dữ liệu (pca)
++ 
 + Bộ phân loại cặp khuôn mặt (pair_clf)
++ 
 + Embedding gallery và tên người (gallery_embeddings, gallery_names)
 
 Nhưng bạn cần chạy lại code prepare_data.py để có được model vì khuôn mặt người không phải ai cũng giống nhau đúng không nè!, nên là hãy tại ra 1 data của riêng mình và chạy chúng nha
