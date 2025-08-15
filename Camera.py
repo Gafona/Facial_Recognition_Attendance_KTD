@@ -1,130 +1,112 @@
-import cv2
-import numpy as np
 import os
-import time
-import joblib
-from skimage.feature import hog
+import cv2
+import torch
+import numpy as np
+from datetime import datetime
 from prepare_data import extract_feature_from_image_bgr, IMG_SIZE
+from model_ngu import build_gallery_from_new_dataset  # Hàm update gallery
 
-print("Đang tải mô hình ML đã train...")
-model_ml = joblib.load('siamese_ml_model.pkl')
-selector = model_ml['selector']
-scaler = model_ml['scaler']
-pca = model_ml['pca']
-pair_clf = model_ml['pair_clf']
-gallery_embeddings = model_ml['gallery_embeddings']
-gallery_names = model_ml['gallery_names']
+MODEL_PATH = "siamese_ml_torch.pth"
+DATAUPDATE_PATH = r"path_newdata"  # Nơi lưu ảnh người mới
+NUM_FRAMES_TO_CAPTURE = 40
+THRESHOLD = 0.15  # Ngưỡng nhận diện
 
-# Load Haar cascade face detector
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+def run_webcam_recognition(model_checkpoint_path=MODEL_PATH, threshold=THRESHOLD):
+    checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
+    selector = checkpoint["selector"]
+    scaler = checkpoint["scaler"]
+    pca = checkpoint["pca"]
+    gallery_embeddings = checkpoint["gallery_embeddings"]
+    gallery_names = checkpoint["gallery_names"]
 
-# Thư mục lưu ảnh điểm danh
-if not os.path.exists('captures'):
-    os.makedirs('captures')
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    cap = cv2.VideoCapture(0)
 
-# Ngưỡng xác suất để nhận diện giống (có thể điều chỉnh)
-PROB_THRESHOLD = 0.85
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-# Hàm tạo feature cặp cho MLP
-def make_pair_feature(e1, e2):
-    e1 = np.asarray(e1).ravel()
-    e2 = np.asarray(e2).ravel()
-    diff = np.abs(e1 - e2)
-    return np.concatenate([e1, e2, diff]).astype(np.float32)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
 
-cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        min_dist_overall = float('inf')
+        nearest_name = "Unknown"
 
-face_detected_time = None
-capture_delay = 2.0
-captured_for_this_person = False
+        for (x, y, w, h) in faces:
+            face_img = frame[y:y+h, x:x+w]
+            face_img = cv2.resize(face_img, IMG_SIZE)
+            feat = extract_feature_from_image_bgr(face_img)
+            X_sel = selector.transform([feat])
+            X_scaled = scaler.transform(X_sel)
+            X_emb = pca.transform(X_scaled)
 
-print("Bắt đầu camera, nhấn 'q' để thoát...")
+            emb_tensor = torch.tensor(X_emb, dtype=torch.float32)
+            gallery_tensor = torch.tensor(gallery_embeddings, dtype=torch.float32)
+            dists = torch.cdist(emb_tensor, gallery_tensor, p=2)
+            min_dist, min_idx = torch.min(dists, dim=1)
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        print("Không đọc được frame từ webcam")
-        break
+            # Cập nhật người gần nhất trong frame
+            if min_dist.item() < min_dist_overall:
+                min_dist_overall = min_dist.item()
+                if min_dist.item() < threshold:
+                    nearest_name = gallery_names[min_idx.item()]
+                else:
+                    nearest_name = "Unknown"
 
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(64, 64))
+            # Vẽ khung và tên
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+            cv2.putText(frame, f"{gallery_names[min_idx.item()]} ({min_dist.item():.2f})",
+                        (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
-    if len(faces) > 0:
-        # Lấy mặt to nhất
-        x, y, w, h = max(faces, key=lambda rect: rect[2] * rect[3])
+        # In ra console người gần nhất
+        print(f"Nearest face in frame: {nearest_name} (distance={min_dist_overall:.2f})")
 
-        # Tính trung tâm khuôn mặt detected
-        center_x = x + w // 2
-        center_y = y + h // 2
+        # Nhấn Space để đăng ký người mới
+        key = cv2.waitKey(1) & 0xFF
+        if key == 32 and len(faces) > 0:  # Space
+            name = input("Nhập tên người mới: ").strip()
+            user_folder = os.path.join(DATAUPDATE_PATH, name)
+            os.makedirs(user_folder, exist_ok=True)
 
-        # Kích thước khung cố định bạn muốn
-        box_w, box_h = 250, 300
+            print(f"📸 Bắt đầu chụp {NUM_FRAMES_TO_CAPTURE} frame cho {name}...")
+            frames_captured = 0
+            while frames_captured < NUM_FRAMES_TO_CAPTURE:
+                ret, frame_cap = cap.read()
+                if not ret:
+                    continue
+                gray_cap = cv2.cvtColor(frame_cap, cv2.COLOR_BGR2GRAY)
+                faces_cap = face_cascade.detectMultiScale(gray_cap, scaleFactor=1.1, minNeighbors=5)
+                for (x_c, y_c, w_c, h_c) in faces_cap:
+                    face_img_cap = frame_cap[y_c:y_c+h_c, x_c:x_c+w_c]
+                    face_img_cap = cv2.resize(face_img_cap, IMG_SIZE)
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                    img_path = os.path.join(user_folder, f"{timestamp}.jpg")
+                    cv2.imwrite(img_path, face_img_cap)
+                    frames_captured += 1
+                    print(f"✅ Đã lưu {frames_captured}/{NUM_FRAMES_TO_CAPTURE} frame")
+                    if frames_captured >= NUM_FRAMES_TO_CAPTURE:
+                        break
+            print(f"🎉 Hoàn tất đăng ký người mới: {name}")
+            
+            # Update gallery ngay sau khi đăng ký xong
+            build_gallery_from_new_dataset(DATAUPDATE_PATH)
+            checkpoint = torch.load(MODEL_PATH, map_location="cpu")
+            selector = checkpoint["selector"]
+            scaler = checkpoint["scaler"]
+            pca = checkpoint["pca"]
+            gallery_embeddings = checkpoint["gallery_embeddings"]
+            gallery_names = checkpoint["gallery_names"]
+            print("🔄 Gallery đã được cập nhật.")
 
-        # Tính tọa độ khung cố định, giữ tâm khuôn mặt
-        new_x = max(center_x - box_w // 2, 0)
-        new_y = max(center_y - box_h // 2, 0)
-        new_x2 = min(new_x + box_w, frame.shape[1])  # không vượt quá frame
-        new_y2 = min(new_y + box_h, frame.shape[0])
+        if key == ord("q"):  # Thoát
+            break
 
-        # Cắt face_roi theo khung mới để trích feature
-        face_roi = frame[new_y:new_y2, new_x:new_x2]
+        cv2.imshow("Face Recognition", frame)
 
-        # Trích feature giống khi train
-        feat = extract_feature_from_image_bgr(face_roi)
-        if feat is not None:
-            # Xử lý pipeline: selector, scaler, pca
-            feat_sel = selector.transform(feat.reshape(1, -1))
-            feat_scaled = scaler.transform(feat_sel)
-            embedding = pca.transform(feat_scaled)[0]
+    cap.release()
+    cv2.destroyAllWindows()
 
-            # So sánh với gallery
-            best_prob = 0
-            best_person = "Unknown"
-            for i, gallery_emb in enumerate(gallery_embeddings):
-                pair_feat = make_pair_feature(embedding, gallery_emb).reshape(1, -1)
-                prob = pair_clf.predict_proba(pair_feat)[0][1]
-                if prob > best_prob:
-                    best_prob = prob
-                    best_person = gallery_names[i]
-
-            if best_prob >= PROB_THRESHOLD:
-                predicted_id = best_person
-            else:
-                predicted_id = "Unknown"
-
-            # Xử lý lưu ảnh điểm danh
-            current_time = time.time()
-            if predicted_id != "Unknown":
-                if face_detected_time is None:
-                    face_detected_time = current_time
-                    captured_for_this_person = False
-
-                if not captured_for_this_person and (current_time - face_detected_time >= capture_delay):
-                    timestamp = time.strftime('%Y%m%d-%H%M%S')
-                    filename = f'captures/{predicted_id}_{timestamp}.jpg'
-                    cv2.imwrite(filename, frame)
-                    print(f"[✓] Đã điểm danh và lưu ảnh: {filename}")
-                    captured_for_this_person = True
-            else:
-                face_detected_time = None
-                captured_for_this_person = False
-
-            label = f"{predicted_id} ({best_prob:.2f})"
-            # Vẽ khung cố định trên frame
-            cv2.rectangle(frame, (new_x, new_y), (new_x2, new_y2), (0, 255, 0), 2)
-            # Hiển thị nhãn ở trên khung mới
-            cv2.putText(frame, label, (new_x, new_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-        else:
-            face_detected_time = None
-            captured_for_this_person = False
-
-    else:
-        face_detected_time = None
-        captured_for_this_person = False
-
-    cv2.imshow("Hệ thống nhận diện khuôn mặt", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-cap.release()
-cv2.destroyAllWindows()
+if __name__ == "__main__":
+    run_webcam_recognition()
+1
