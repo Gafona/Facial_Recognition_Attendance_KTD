@@ -41,7 +41,7 @@ Hệ thống sử dụng file duy nhất **`siamese_ml_model.pkl`** chứa:
 ```bash
 python camera.py
 ```
-Khi khuôn mặt được phát hiện và xác suất nhận dạng ≥ 0.95, hệ thống sẽ:
+Khi khuôn mặt được phát hiện và xác suất nhận dạng ≥ 0.85, hệ thống sẽ:
 
 + Lưu ảnh khuôn mặt.
 + Ghi tên + thời gian vào log điểm danh.
